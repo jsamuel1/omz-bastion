@@ -1,26 +1,20 @@
 import * as cdk from 'aws-cdk-lib';
 import { aws_ec2 as ec2, aws_iam as iam } from 'aws-cdk-lib';
-import { UserData } from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
-import { config } from 'process';
-// import * as sqs from 'aws-cdk-lib/aws-sqs';
 
+export interface OmzBastionStackProps extends cdk.StackProps {
+  gitRepoProjectName: string;
+  gitRepoOrgName: string;
+  gitRepoHostName: string;
+  vpcName: string;
+  instanceName: string;
+  instanceType: ec2.InstanceType;
+  cpuType: ec2.AmazonLinuxCpuType;
+  ec2KeyName: string;
+}
 export class OmzBastionStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: OmzBastionStackProps) {
     super(scope, id, props);
-
-    const gitRepoProjectName = this.node.tryGetContext('gitUrl') ?? 'dot-files';
-    const gitRepoOrgName = this.node.tryGetContext('gitUrl') ?? 'jsamuel1';
-    const gitRepoHostName = this.node.tryGetContext('gitUrl') ?? 'github.com';
-    const gitUrl = `https://${gitRepoHostName}/${gitRepoOrgName}/${gitRepoProjectName}`;
-    const vpc = ec2.Vpc.fromLookup(this, 'VPC', { vpcName: 'eksctl-circleci-cluster/VPC' });
-    const instanceName = this.node.tryGetContext('instanceName') ?? `BastionHost-${new Date().toISOString().slice(0, 10)}`;
-    const instanceType = this.node.tryGetContext('instanceType') ?? 'm7i-flex.xlarge';
-    const cpuArch = this.node.tryGetContext('cpuArch') ?? 'X86_64';
-    var cpuType = ec2.AmazonLinuxCpuType.X86_64;
-    if (cpuArch == 'ARM64') {
-      cpuType = ec2.AmazonLinuxCpuType.ARM_64;
-    }
 
     const cloudInit = ec2.CloudFormationInit.fromConfigSets(
       {
@@ -54,13 +48,13 @@ export class OmzBastionStack extends cdk.Stack {
             ec2.InitFile.fromFileInline('/etc/skel/.ssh/authorized_keys',
               `${process.env.HOME}/.ssh/id_ed25519.pub`, { mode: "000644" }),
           ]),
-          yum: new ec2.InitConfig(initPackagesYum()),
+          yum: new ec2.InitConfig(this.initPackagesYum()),
 
           commands: new ec2.InitConfig([
             ec2.InitCommand.shellCommand(`sed -i "s\\\\SHELL=.*\\\\SHELL=/usr/bin/zsh\\ \\" /etc/defaults/useradd`, { ignoreErrors: true }),
             ec2.InitCommand.shellCommand(`
-            git clone ${gitUrl} /usr/src/${gitRepoProjectName} 
-            cd /usr/src/${gitRepoProjectName} || exit
+            git clone "https://${props.gitRepoHostName}/${props.gitRepoOrgName}/${props.gitRepoProjectName}" "/usr/src/${props.gitRepoProjectName}"
+            cd "/usr/src/${props.gitRepoProjectName}" || exit
             HOME=/etc/skel ./bootstrap.sh 
              `, {
               ignoreErrors: true,
@@ -71,16 +65,16 @@ export class OmzBastionStack extends cdk.Stack {
 
 
     const host = new ec2.BastionHostLinux(this, 'BastionHost', {
-      vpc,
+      vpc: ec2.Vpc.fromLookup(this, 'VPC', { vpcName: props.vpcName }),
       blockDevices: [
         {
           deviceName: '/dev/xvda',
           volume: ec2.BlockDeviceVolume.ebs(60)
         }
       ],
-      machineImage: ec2.MachineImage.latestAmazonLinux2023({ cpuType: cpuType }),
-      instanceType: new ec2.InstanceType(instanceType),
-      instanceName: instanceName,
+      machineImage: ec2.MachineImage.latestAmazonLinux2023({ cpuType: props.cpuType }),
+      instanceType: props.instanceType,
+      instanceName: props.instanceName,
       requireImdsv2: true,
       init: cloudInit,
       initOptions: {
@@ -94,25 +88,26 @@ export class OmzBastionStack extends cdk.Stack {
 
     const instance = host.node.defaultChild as ec2.Instance;
     const cfnInstance = instance.node.defaultChild as ec2.CfnInstance;
-    cfnInstance.keyName = 'id_ed25519';
+    cfnInstance.keyName = props.ec2KeyName;
 
-    new cdk.CfnOutput(this, 'BastionInstanceId', { value: instance.instanceId, exportName: 'BastionInstanceId' });
-    new cdk.CfnOutput(this, 'BastionKeyName', { value: instanceName, exportName: 'BastionName' })
-    new cdk.CfnOutput(this, 'BootstrapCommand', { value: `
-    aws ssm start-session --target ${instance.instanceId} --document-name AWS-StartInteractiveCommand --parameters \ 
-    command="cd /usr/src/${gitRepoProjectName} && /usr/src/${gitRepoProjectName}/bootstrap.sh"
-    `, exportName: 'BootstrapCommand'})
+    new cdk.CfnOutput(this, 'BastionInstanceId', { value: instance.instanceId });
+    new cdk.CfnOutput(this, 'BastionKeyName', { value: props.instanceName })
+    new cdk.CfnOutput(this, 'BootstrapCommand', {
+      value: `
+    aws ssm start-session --target ${instance.instanceId} --document-name AWS-StartInteractiveCommand --parameters \\ 
+    command="cd /usr/src/${props.gitRepoProjectName} && /usr/src/${props.gitRepoProjectName}/bootstrap.sh"
+    `})
+  };
+
+  initPackagesYum(): cdk.aws_ec2.InitElement[] {
+    // Generate an array of InitPackage with yum entries for each line in the file dnfrequirements.txt
+    const dnfRequirements = require('fs').readFileSync('dnfrequirements.txt', 'utf8').
+      split('\n').map((line: string) => line.trim()).flatMap((line: string) => {
+        if (line.length == 0) return [];
+        if (line.startsWith('#')) return [];
+        return [line];
+      });
+
+    return dnfRequirements.map((packageName: string) => ec2.InitPackage.yum(packageName));
   }
-}
-
-function initPackagesYum(): cdk.aws_ec2.InitElement[] {
-  // Generate an array of InitPackage with yum entries for each line in the file dnfrequirements.txt
-  const dnfRequirements = require('fs').readFileSync('dnfrequirements.txt', 'utf8').
-    split('\n').map((line: string) => line.trim()).flatMap((line: string) => {
-      if (line.length == 0) return [];
-      if (line.startsWith('#')) return [];
-      return [line];
-    });
-
-  return dnfRequirements.map((packageName: string) => ec2.InitPackage.yum(packageName));
 }
