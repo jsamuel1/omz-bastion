@@ -59,6 +59,25 @@
     "@aws-cdk/aws-rds:auroraClusterChangeScopeOfInstanceParameterGroupWithEachParameters": true,
     "@aws-cdk/aws-appsync:useArnForSourceApiAssociationIdentifier": true,
     "@aws-cdk/aws-rds:preventRenderingDeprecatedCredentials": true,
-    "@aws-cdk/aws-codepipeline-actions:useNewDefaultBranchForCodeCommitSource": true
+    "@aws-cdk/aws-codepipeline-actions:useNewDefaultBranchForCodeCommitSource": true,
+    "863638663908": {
+      "environment": "sauhsoj1",
+      "region": "ap-southeast-2",
+      "vpcName": "VPC",
+      "instances": [
+        {
+          "instanceName": "bastion-intel",
+          "instanceType": "m7i-flex.large",
+          "cpuType": "x86_64",
+          "keyName": "id_ed25519"
+        },
+        {
+          "instanceName": "bastion-arm",
+          "instanceType": "m7g.large",
+          "cpuType": "arm64",
+          "keyName": "id_ed25519"
+        }
+      ]
+    }
   }
 }

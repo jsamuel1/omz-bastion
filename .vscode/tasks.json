@@ -1,0 +1,57 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "cdk: synth",
+			"type": "shell",
+			"command": "npx aws-cdk synth",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared",
+				"clear": true,
+				"focus": true
+			}
+		},
+		{
+			"label": "cdk: deploy",
+			"type": "shell",
+			"command": "npx aws-cdk deploy --require-approval=never ${input:stacks}",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared",
+				"clear": true,
+				"focus": true
+			}
+		},
+		{
+			"type": "npm",
+			"script": "build",
+			"group": "build",
+			"problemMatcher": [],
+			"label": "npm: build",
+			"detail": "tsc"
+		},
+		{
+			"label": "cdk: destroy",
+			"type": "shell",
+			"command": "npx aws-cdk destroy ${input:stacks}",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared",
+				"clear": true,
+				"focus": true
+			}
+		},
+	],
+	"inputs": [
+		{
+			"id": "stacks",
+			"description": "CDK stacks to use",
+			"default": "--all",
+			"type": "promptString",
+		}
+	]
+}

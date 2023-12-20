@@ -3,38 +3,46 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { aws_ec2 as ec2 } from 'aws-cdk-lib';
 import { OmzBastionStack, OmzBastionStackProps } from '../lib/omz-bastion-stack';
+import { OmzSsmLambdaStack } from '../lib/omz-ssm-lambda-stack';
+import { ContextProps } from '../lib/context';
+import { AmazonLinuxCpuType } from 'aws-cdk-lib/aws-ec2';
 
 const app = new cdk.App();
-
-const today = new Date();
-const dateString = `${today.getFullYear()}${("0" + (today.getMonth() + 1)).slice(-2)}${("0" + today.getDate()).slice(-2)}`;
-var instanceName = app.node.tryGetContext('instanceName') ?? "BastionHost" + dateString;
-var instanceType = new ec2.InstanceType(app.node.tryGetContext('instanceType') ?? 'm7i-flex.xlarge');
-
-// use this when CDK is fixed to not throw errors w/ m7i-flex
-function getCpuType(architecture: string): ec2.AmazonLinuxCpuType {
-  switch (architecture) {
-    case "x86_64":
-      return ec2.AmazonLinuxCpuType.X86_64;
-    case "arm64":
-      return ec2.AmazonLinuxCpuType.ARM_64;
-    default:
-      throw new Error(`Unsupported architecture: ${architecture}`);
-  }
-}
-
-
-const props: OmzBastionStackProps = {
+var lambda = new OmzSsmLambdaStack(app, 'SsmInitiationLambda', {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION
   },
-  gitRepoProjectName: app.node.tryGetContext('gitProjectName') ?? 'dot-files',
-  gitRepoOrgName: app.node.tryGetContext('gitOrgName') ?? 'jsamuel1',
-  gitRepoHostName: app.node.tryGetContext('gitHostName') ?? 'github.com',
-  vpcName: app.node.tryGetContext('vpcName') ?? 'eksctl-circleci-cluster/VPC',
-  instanceName: instanceName,
-  instanceType: instanceType,
-  ec2KeyName: 'id_ed25519',
-  cpuType: getCpuType(app.node.tryGetContext('cpuArch') ?? "x86_64"),
-};
-new OmzBastionStack(app, instanceName, props);
+});
+
+const accountId = process.env.CDK_DEFAULT_ACCOUNT;
+if (!accountId) {
+  throw new Error('CDK_DEFAULT_ACCOUNT is not set');
+}
+const context: ContextProps = app.node.tryGetContext(accountId);
+if (!context) {
+  throw new Error(`Context for account ${accountId} not found`);
+}
+
+var gitRepoProjectName = app.node.tryGetContext('gitProjectName') ?? 'dot-files';
+var gitRepoOrgName = app.node.tryGetContext('gitOrgName') ?? 'jsamuel1';
+var gitRepoHostName = app.node.tryGetContext('gitHostName') ?? 'github.com';
+
+context.instances.forEach(instance => {
+  const props: OmzBastionStackProps = {
+    env: {
+      account: process.env.CDK_DEFAULT_ACCOUNT, region: context.region ?? process.env.CDK_DEFAULT_REGION
+    },
+    gitRepoProjectName: gitRepoProjectName,
+    gitRepoOrgName: gitRepoOrgName,
+    gitRepoHostName: gitRepoHostName,
+    vpcName: context.vpcName,
+    instanceName: context.environment + instance.instanceName,
+    instanceType: instance.instanceType,
+    ec2KeyName: instance.keyName ?? "id_25519",
+    cpuType: instance.cpuType,
+    postBootLambdaArn: lambda.arn
+  };
+  new OmzBastionStack(app, props.instanceName, props);
+}
+);
+

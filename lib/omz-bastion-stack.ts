@@ -1,5 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
-import { aws_ec2 as ec2, aws_iam as iam } from 'aws-cdk-lib';
+import { Tags, aws_ec2 as ec2, aws_iam as iam } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 export interface OmzBastionStackProps extends cdk.StackProps {
@@ -11,6 +11,7 @@ export interface OmzBastionStackProps extends cdk.StackProps {
   instanceType: ec2.InstanceType;
   cpuType: ec2.AmazonLinuxCpuType;
   ec2KeyName: string;
+  postBootLambdaArn?: string;
 }
 export class OmzBastionStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: OmzBastionStackProps) {
@@ -53,9 +54,9 @@ export class OmzBastionStack extends cdk.Stack {
           commands: new ec2.InitConfig([
             ec2.InitCommand.shellCommand(`sed -i "s\\\\SHELL=.*\\\\SHELL=/usr/bin/zsh\\ \\" /etc/defaults/useradd`, { ignoreErrors: true }),
             ec2.InitCommand.shellCommand(`
-            git clone "https://${props.gitRepoHostName}/${props.gitRepoOrgName}/${props.gitRepoProjectName}" "/usr/src/${props.gitRepoProjectName}"
-            cd "/usr/src/${props.gitRepoProjectName}" || exit
-            HOME=/etc/skel ./bootstrap.sh 
+            git clone "https://${props.gitRepoHostName}/${props.gitRepoOrgName}/${props.gitRepoProjectName}" "~/src/${props.gitRepoProjectName}"
+            cd "~/${props.gitRepoProjectName}" || exit
+            GLOBAL=1 ./bootstrap.sh 
              `, {
               ignoreErrors: true,
             }),
@@ -85,18 +86,41 @@ export class OmzBastionStack extends cdk.Stack {
     });
 
     host.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'));
+    Tags.of(this).add('OMZBASTION', props.instanceName);
+    Tags.of(host).add('OMZBASTION-BOOTSTRAP', "true", { applyToLaunchedInstances: true });
 
     const instance = host.node.defaultChild as ec2.Instance;
+    const instanceId = instance.instanceId;
     const cfnInstance = instance.node.defaultChild as ec2.CfnInstance;
     cfnInstance.keyName = props.ec2KeyName;
 
-    new cdk.CfnOutput(this, 'BastionInstanceId', { value: instance.instanceId });
+    if (props.postBootLambdaArn) {
+      host.role.addToPrincipalPolicy(new iam.PolicyStatement({
+        actions: ['lambda:InvokeFunction','lambda:InvokeAsync'],
+        effect: iam.Effect.ALLOW,
+        resources: [props.postBootLambdaArn]
+      }));
+      instance.addUserData(
+        `EC2_INSTANCE_ID=\$(cat /var/lib/cloud/data/instance-id)
+cat > invoke_args.json <<EOF
+{
+  "detail": {
+    "instance-id": "\${EC2_INSTANCE_ID}"
+  }
+}
+EOF
+
+aws lambda invoke-async --function-name ${props.postBootLambdaArn} --invoke-args invoke_args.json
+rm invoke_args.json
+`
+      );
+    }
+
+    new cdk.CfnOutput(this, 'BastionInstanceId', { value: instanceId });
     new cdk.CfnOutput(this, 'BastionKeyName', { value: props.instanceName })
     new cdk.CfnOutput(this, 'BootstrapCommand', {
-      value: `
-    aws ssm start-session --target ${instance.instanceId} --document-name AWS-StartInteractiveCommand --parameters \\ 
-    command="cd /usr/src/${props.gitRepoProjectName} && /usr/src/${props.gitRepoProjectName}/bootstrap.sh"
-    `})
+      value: `aws ssm start-session --target ${instance.instanceId} --document-name AWS-StartInteractiveCommand --parameters '{ "commands": [ "sh -c \\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\" " ] }`
+    })
   };
 
   initPackagesYum(): cdk.aws_ec2.InitElement[] {

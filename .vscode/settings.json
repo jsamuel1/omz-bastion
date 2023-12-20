@@ -3,9 +3,11 @@
         "dnfrequirements",
         "eksctl",
         "NOPASSWD",
+        "OMZBASTION",
         "pgrep",
         "skel",
         "xlarge",
         "xvda"
-    ]
+    ],
+    "task.autoDetect": "off"
 }
