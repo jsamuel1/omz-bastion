@@ -119,10 +119,7 @@ rm invoke_args.json
     }
 
     new CfnOutput(this, 'BastionInstanceId', { value: instanceId });
-    new CfnOutput(this, 'BastionKeyName', { value: props.instanceName })
-    new CfnOutput(this, 'BootstrapCommand', {
-      value: `aws ssm start-session --target ${instance.instanceId} --document-name AWS-StartInteractiveCommand --parameters '{ "commands": [ "sh -c \\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\" " ] }`
-    })
+    new CfnOutput(this, 'BastionName', { value: props.instanceName })
   };
 
   initPackagesYum(): ec2.InitElement[] {
