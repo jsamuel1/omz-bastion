@@ -1,26 +1,25 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
-import * as cdk from 'aws-cdk-lib';
-import { aws_ec2 as ec2 } from 'aws-cdk-lib';
 import { OmzBastionStack, OmzBastionStackProps } from '../lib/omz-bastion-stack';
 import { OmzSsmLambdaStack } from '../lib/omz-ssm-lambda-stack';
 import { ContextProps } from '../lib/context';
-import { AmazonLinuxCpuType } from 'aws-cdk-lib/aws-ec2';
+import { App } from 'aws-cdk-lib';
 
-const app = new cdk.App();
+const app = new App();
 var lambda = new OmzSsmLambdaStack(app, 'SsmInitiationLambda', {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION
   },
 });
 
-const accountId = process.env.CDK_DEFAULT_ACCOUNT;
-if (!accountId) {
-  throw new Error('CDK_DEFAULT_ACCOUNT is not set');
-}
-const context: ContextProps = app.node.tryGetContext(accountId);
+const environment: string = app.node.tryGetContext('environment');
+if (!environment) {
+  throw new Error('Context variable environment not found');
+};
+
+const context: ContextProps = app.node.tryGetContext(environment);
 if (!context) {
-  throw new Error(`Context for account ${accountId} not found`);
+  throw new Error(`Context for account ${environment} not found`);
 }
 
 var gitRepoProjectName = app.node.tryGetContext('gitProjectName') ?? 'dot-files';
@@ -36,7 +35,7 @@ context.instances.forEach(instance => {
     gitRepoOrgName: gitRepoOrgName,
     gitRepoHostName: gitRepoHostName,
     vpcName: context.vpcName,
-    instanceName: context.environment + instance.instanceName,
+    instanceName: context.prefix + instance.instanceName,
     instanceType: instance.instanceType,
     ec2KeyName: instance.keyName ?? "id_25519",
     cpuType: instance.cpuType,

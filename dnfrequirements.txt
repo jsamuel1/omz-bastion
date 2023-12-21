@@ -10,7 +10,6 @@ docker
 gcc
 gcc-c++
 gettext
-#gh
 git
 golang
 libedit
@@ -24,10 +23,8 @@ make
 ninja-build
 openssl-devel
 patch
-#pkgconfig
 readline
 readline-devel
-#rtx
 sqlite-devel
 sudo
 unzip

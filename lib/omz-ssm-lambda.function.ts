@@ -1,8 +1,7 @@
 // ssm-session-lambda.js
 
-import { Context, EventBridgeEvent } from 'aws-lambda';
+import { Context } from 'aws-lambda';
 import { SSMClient, StartSessionCommand } from "@aws-sdk/client-ssm";
-import * as eventbridge from "@aws-sdk/client-eventbridge";
 
 export const handler = async (event: any, context: Context) => {
   console.log(`Event: ${JSON.stringify(event, null, 2)}`);

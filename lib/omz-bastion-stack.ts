@@ -1,8 +1,11 @@
-import * as cdk from 'aws-cdk-lib';
-import { Tags, aws_ec2 as ec2, aws_iam as iam } from 'aws-cdk-lib';
+import {
+  CfnOutput, Duration, Stack, StackProps, Tags,
+  aws_ec2 as ec2,
+  aws_iam as iam
+} from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
-export interface OmzBastionStackProps extends cdk.StackProps {
+export interface OmzBastionStackProps extends StackProps {
   gitRepoProjectName: string;
   gitRepoOrgName: string;
   gitRepoHostName: string;
@@ -13,7 +16,7 @@ export interface OmzBastionStackProps extends cdk.StackProps {
   ec2KeyName: string;
   postBootLambdaArn?: string;
 }
-export class OmzBastionStack extends cdk.Stack {
+export class OmzBastionStack extends Stack {
   constructor(scope: Construct, id: string, props: OmzBastionStackProps) {
     super(scope, id, props);
 
@@ -34,13 +37,12 @@ export class OmzBastionStack extends cdk.Stack {
             ec2.InitCommand.shellCommand("yum config-manager --add-repo https://packages.microsoft.com/yumrepos/vscode"),
             ec2.InitCommand.shellCommand("yum install -y git vim tmux zsh gh code", { ignoreErrors: true }),
 
-            // ec2.InitGroup.fromName('docker'),
             //  ec2.InitGroup.fromName('ssm-user', 1001),
             //  ec2.InitUser.fromName('ssm-user',
             //    {
             //      homeDir: '/home/ssm-user',
             //      userId: 1001,
-            //      groups: ['ssm-user', 'docker', 'wheel', 'adm'],
+            //      groups: ['ssm-user', 'wheel', 'adm'],
             //    }),
             ec2.InitFile.fromString("/etc/sudoers.d/ssm-agent-users", "ssm-user ALL=(ALL) NOPASSWD:ALL",
               { mode: "000440", }),
@@ -80,7 +82,7 @@ export class OmzBastionStack extends cdk.Stack {
       init: cloudInit,
       initOptions: {
         configSets: ['default'],
-        timeout: cdk.Duration.minutes(30),
+        timeout: Duration.minutes(30),
         ignoreFailures: true
       },
     });
@@ -116,14 +118,14 @@ rm invoke_args.json
       );
     }
 
-    new cdk.CfnOutput(this, 'BastionInstanceId', { value: instanceId });
-    new cdk.CfnOutput(this, 'BastionKeyName', { value: props.instanceName })
-    new cdk.CfnOutput(this, 'BootstrapCommand', {
+    new CfnOutput(this, 'BastionInstanceId', { value: instanceId });
+    new CfnOutput(this, 'BastionKeyName', { value: props.instanceName })
+    new CfnOutput(this, 'BootstrapCommand', {
       value: `aws ssm start-session --target ${instance.instanceId} --document-name AWS-StartInteractiveCommand --parameters '{ "commands": [ "sh -c \\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\" " ] }`
     })
   };
 
-  initPackagesYum(): cdk.aws_ec2.InitElement[] {
+  initPackagesYum(): ec2.InitElement[] {
     // Generate an array of InitPackage with yum entries for each line in the file dnfrequirements.txt
     const dnfRequirements = require('fs').readFileSync('dnfrequirements.txt', 'utf8').
       split('\n').map((line: string) => line.trim()).flatMap((line: string) => {

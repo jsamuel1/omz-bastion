@@ -12,7 +12,7 @@ export type BastionInstanceProps = {
 
 export type ContextProps = 
 {
-    environment?: string;  // this will also be the prefix
+    prefix?: string;  // this will also be the prefix
     region?: string;
     vpcName: string;
     instances: BastionInstanceProps[];
