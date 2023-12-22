@@ -72,8 +72,8 @@ export class OmzBastionStack extends Stack {
           yum: new ec2.InitConfig(this.initPackagesYum()),
 
           commands: new ec2.InitConfig([
-            ec2.InitCommand.shellCommand(`sed -i "s\\\\SHELL=.*\\\\SHELL=/usr/bin/zsh\\" /etc/defaults/useradd`, { ignoreErrors: true }),
-            ec2.InitCommand.shellCommand(`stdbuf -oL nohup GLOBAL=1 sh -c "$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)"`, { ignoreErrors: true }),
+            ec2.InitCommand.shellCommand(`sed -i "s\\\\SHELL=.*\\\\SHELL=/usr/bin/zsh\\\\" /etc/defaults/useradd`, { ignoreErrors: true }),
+            ec2.InitCommand.shellCommand(`GLOBAL=1 stdbuf -oL nohup bash -c "$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)"`, { ignoreErrors: true }),
           ]),
 
           aptPost: new ec2.InitConfig([

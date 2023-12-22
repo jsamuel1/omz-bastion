@@ -18,7 +18,7 @@ export const handler = async (event: any, context: Context) => {
     Reason: "Launch Lambda",
     Parameters: { // SessionManagerParameters
       "command": [ // SessionManagerParameterValueList
-      'stdbuf -oL nohup sh -c "$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)"',
+      'stdbuf -oL nohup bash -c "$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)"',
       ],
     },
   };
