@@ -70,13 +70,15 @@
           "instanceName": "bastion-intel",
           "instanceType": "m7i-flex.large",
           "cpuType": "x86_64",
-          "keyName": "id_ed25519"
+          "keyName": "id_ed25519",
+          "linuxDistribution": "UBUNTU"
         },
         {
           "instanceName": "bastion-arm",
           "instanceType": "m7g.large",
           "cpuType": "arm64",
-          "keyName": "id_ed25519"
+          "keyName": "id_ed25519",
+          "linuxDistribution": "UBUNTU"
         }
       ]
     }

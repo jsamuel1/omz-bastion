@@ -37,6 +37,7 @@ context.instances.forEach(instance => {
     vpcName: context.vpcName,
     instanceName: context.prefix + instance.instanceName,
     instanceType: instance.instanceType,
+    linuxDistribution: instance.linuxDistribution ?? 'AMAZON_LINUX2023',
     ec2KeyName: instance.keyName ?? "id_25519",
     cpuType: instance.cpuType,
     postBootLambdaArn: lambda.arn

@@ -5,8 +5,7 @@ export type BastionInstanceProps = {
     keyName?: string;
     instanceType: InstanceType;
     cpuType: AmazonLinuxCpuType;
-    // For future expansion
-    // linuxDistribution?: 'AMAZON_LINUX2023';
+    linuxDistribution?: string;
     // allowedSecurityGroups?: string[];
   };
 

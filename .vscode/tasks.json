@@ -16,7 +16,8 @@
 		{
 			"label": "cdk: deploy",
 			"type": "shell",
-			"command": "npx aws-cdk deploy --require-approval=never ${input:stacks}",
+//			"command": "npx aws-cdk deploy --require-approval=never ${input:stacks}",
+			"command": "npx aws-cdk deploy --require-approval=never --all",
 			"group": "build",
 			"presentation": {
 				"reveal": "always",
@@ -36,7 +37,7 @@
 		{
 			"label": "cdk: destroy",
 			"type": "shell",
-			"command": "npx aws-cdk destroy ${input:stacks}",
+			"command": "npx aws-cdk destroy --all",
 			"group": "build",
 			"presentation": {
 				"reveal": "always",
@@ -51,7 +52,11 @@
 			"id": "stacks",
 			"description": "CDK stacks to use",
 			"default": "--all",
-			"type": "promptString",
+			"type": "pickString",
+			"options": [
+				"--all",
+				"OmzSsmLambdaStack",
+			]
 		}
 	]
 }
