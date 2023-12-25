@@ -1,10 +1,11 @@
 import {
-  CfnOutput, Duration, Stack, StackProps, Tags,
+  CfnOutput, Duration, RemovalPolicy, Stack, StackProps, Tags,
   aws_ec2 as ec2,
   aws_iam as iam
 } from 'aws-cdk-lib';
-import { AmazonLinuxCpuType, UserData } from 'aws-cdk-lib/aws-ec2';
+import { AmazonLinuxCpuType, MultipartUserData, UserData } from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
+import { readFileSync } from 'fs';
 
 export interface OmzBastionStackProps extends StackProps {
   gitRepoProjectName: string;
@@ -16,73 +17,51 @@ export interface OmzBastionStackProps extends StackProps {
   instanceType: ec2.InstanceType;
   cpuType: ec2.AmazonLinuxCpuType;
   ec2KeyName: string;
-  postBootLambdaArn?: string;
 }
 export class OmzBastionStack extends Stack {
+
+  private props: OmzBastionStackProps;
+
+  getCpuType(): string {
+    return this.props.cpuType;
+  }
+
+  getCpuTypeDpkg(): string {
+    // convert from AmazonLinuxCpuType to Debian style CpuType
+    switch (this.props.cpuType) {
+      case AmazonLinuxCpuType.ARM_64:
+        return "arm64";
+      case AmazonLinuxCpuType.X86_64:
+        return "amd64";
+    }
+
+    return "amd64"; // this should be unreachable
+  }
+
+  getCpuTypeAwscli(): string {
+    // convert from AmazonLinuxCpuType to AWS CLI style CpuType
+    switch (this.props.cpuType) {
+      case AmazonLinuxCpuType.ARM_64:
+        return "aarch64";
+      case AmazonLinuxCpuType.X86_64:
+        return "x86_64";
+    }
+
+  }
+
+  isUbuntu(): boolean {
+    return this.props.linuxDistribution === 'UBUNTU';
+  }
+
+  isAL2023(): boolean {
+    return !this.isUbuntu();
+  }
+
   constructor(scope: Construct, id: string, props: OmzBastionStackProps) {
     super(scope, id, props);
+    this.props = props;
 
-    const cloudInit = ec2.CloudFormationInit.fromConfigSets(
-      {
-        configSets:
-        {
-          default: ['yumConfig', 'ssh', 'yum', 'commands'],
-          ubuntu: ['aptConfig', 'ssh', 'commands', 'aptpost'],
-        },
-        configs:
-        {
-          aptConfig: new ec2.InitConfig([
-            ec2.InitCommand.shellCommand("while pgrep apt -c ; do sleep 5; done ", { ignoreErrors: true }),
-            ec2.InitCommand.shellCommand("apt update && sudo apt install curl apt-transport-https software-properties-common gpg wget -y"),
-            ec2.InitCommand.shellCommand("install -dm 755 /etc/apt/keyrings"),
-
-            // rtx repo            
-            ec2.InitCommand.shellCommand("wget -qO - https://rtx.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/rtx-archive-keyring.gpg 1> /dev/null"),
-            ec2.InitCommand.shellCommand(`echo "deb [signed-by=/etc/apt/keyrings/rtx-archive-keyring.gpg arch=$(dpkg --print-architecture)] https://rtx.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/rtx.list`),
-
-            // github cli repo
-            ec2.InitCommand.shellCommand('curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg'),
-            ec2.InitCommand.shellCommand('chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg'),
-            ec2.InitCommand.shellCommand('echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null'),
-
-            // microsoft vscode repo
-            ec2.InitCommand.shellCommand('wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/packages.microsoft.gpg 1> /dev/null'),
-            ec2.InitCommand.shellCommand('echo "deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list'),
-
-            // install the packages
-            ec2.InitCommand.shellCommand("sudo apt update"),
-            ec2.InitCommand.shellCommand("apt-get install -y git vim tmux zsh", { ignoreErrors: true }),
-            ec2.InitCommand.shellCommand("apt-get install -y rtx gh code", { ignoreErrors: true }),
-          ]),
-          yumConfig: new ec2.InitConfig([
-            ec2.InitCommand.shellCommand("while pgrep yum -c ; do sleep 5; done ", { ignoreErrors: true }),
-            ec2.InitCommand.shellCommand("yum update -y", { ignoreErrors: true }),
-            ec2.InitCommand.shellCommand("yum install -y dnf-plugins-core", { ignoreErrors: true }),
-            ec2.InitCommand.shellCommand("yum config-manager --add-repo https://rtx.pub/rpm/rtx.repo"),
-            ec2.InitCommand.shellCommand("yum config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo"),
-            ec2.InitCommand.shellCommand("yum config-manager --add-repo https://packages.microsoft.com/yumrepos/vscode"),
-            ec2.InitCommand.shellCommand("yum install -y git vim tmux zsh gh code", { ignoreErrors: true }),
-          ]),
-          ssh: new ec2.InitConfig([
-            ec2.InitFile.fromString("/etc/sudoers.d/ssm-agent-users", "ssm-user ALL=(ALL) NOPASSWD:ALL",
-              { mode: "000440", }),
-            ec2.InitFile.fromFileInline('/etc/skel/.ssh/authorized_keys',
-              `${process.env.HOME}/.ssh/id_ed25519.pub`, { mode: "000644" }),
-          ]),
-          yum: new ec2.InitConfig(this.initPackagesYum()),
-
-          commands: new ec2.InitConfig([
-            ec2.InitCommand.shellCommand(`sed -i "s\\\\SHELL=.*\\\\SHELL=/usr/bin/zsh\\\\" /etc/defaults/useradd`, { ignoreErrors: true }),
-            ec2.InitCommand.shellCommand(`GLOBAL=1 stdbuf -oL nohup bash -c "$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)"`, { ignoreErrors: true }),
-          ]),
-
-          aptPost: new ec2.InitConfig([
-            ec2.InitCommand.shellCommand("systemctl start unattended-upgrades", { ignoreErrors: true }),
-          ]),
-        },
-      });
-
-    const host = new ec2.BastionHostLinux(this, 'BastionHost', {
+    const host = new ec2.Instance(this, 'BastionHost', {
       vpc: ec2.Vpc.fromLookup(this, 'VPC', { vpcName: props.vpcName }),
       blockDevices: [
         {
@@ -94,99 +73,168 @@ export class OmzBastionStack extends Stack {
       instanceType: props.instanceType,
       instanceName: props.instanceName,
       requireImdsv2: true,
-      init: cloudInit,
-      initOptions: {
-        configSets: props.linuxDistribution == "UBUNTU" ?
-          ['ubuntu'] : ['default'],
-        timeout: Duration.minutes(30),
-        ignoreFailures: true
-      },
+      keyPair: ec2.KeyPair.fromKeyPairName(this, 'bastionKeyPair', props.ec2KeyName)
     });
 
     host.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'));
-    Tags.of(this).add('OMZBASTION', props.instanceName);
+    host.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchLogsFullAccess'));
+    host.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'));
+    host.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AWSCloudFormationFullAccess'));
+    host.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMFullAccess'));
+    host.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'));
+    host.role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2ContainerRegistryFullAccess'));
+    host.role.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: [
+        'ssmmessages:*',
+        'ssm:UpdateInstanceInformation',
+        'ec2messages:*',
+      ],
+      resources: ['*'],
+    }));
+
+    Tags.of(this).add('OMZBASTION', props.instanceName, { applyToLaunchedInstances: true });
     Tags.of(host).add('OMZBASTION-BOOTSTRAP', "true", { applyToLaunchedInstances: true });
 
-    const instance = host.node.defaultChild as ec2.Instance;
-    const instanceId = instance.instanceId;
-    const cfnInstance = instance.node.defaultChild as ec2.CfnInstance;
+    const instanceId = host.instanceId;
+    const cfnInstance = host.node.defaultChild as ec2.CfnInstance;
     cfnInstance.keyName = props.ec2KeyName;
 
-    if (props.postBootLambdaArn) {
-      host.role.addToPrincipalPolicy(new iam.PolicyStatement({
-        actions: ['lambda:InvokeFunction', 'lambda:InvokeAsync'],
-        effect: iam.Effect.ALLOW,
-        resources: [props.postBootLambdaArn]
-      }));
-      instance.addUserData(
-        `EC2_INSTANCE_ID=\$(cat /var/lib/cloud/data/instance-id)
-cat > invoke_args.json <<EOF
-{
-  "detail": {
-    "instance-id": "\${EC2_INSTANCE_ID}"
-  }
-}
-EOF
-
-aws lambda invoke-async --function-name ${props.postBootLambdaArn} --invoke-args invoke_args.json
-rm invoke_args.json
-`
-      );
+    // wait for cnfInstance to call cfn-signal to signify creation complete
+    cfnInstance.cfnOptions.creationPolicy = {
+      resourceSignal: {
+        count: 1,
+        timeout: 'PT45M'
+      }
     }
+    host.userData.addSignalOnExitCommand(host); // this must be after Instance is instantiated.
 
     new CfnOutput(this, 'BastionInstanceId', { value: instanceId });
     new CfnOutput(this, 'BastionName', { value: props.instanceName })
   };
 
-  private userDataUbuntu() {
-    var userData = UserData.forLinux({ shebang: '#!/bin/bash' });
-    userData.addCommands(
-      'systemctl stop unattended-upgrades',
-      'while pgrep apt -c ; do sleep 5; done',
-      'apt-get update -y',
-      'apt-get -y install python3-pip',
-      'mkdir -p /opt/aws/bin',
-      'pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz',
-      'ln -s /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup',
-      'ln -s /usr/local/bin/cfn-init /opt/aws/bin/',
-      'ln -s /usr/local/bin/cfn-signal /opt/aws/bin/',
-      //`/usr/local/bin/cfn-init -v --stack ${this.stackName} --resource ${cfnInstance.logicalId} --region ${this.region} --configsets ubuntu`,
-      //`/usr/local/bin/cfn-signal -e $? --stack ${this.stackName} --resource ${cfnInstance.logicalId} --region ${this.region}`
-    );
+  private createUserData(props: OmzBastionStackProps) {
+    var userData = new MultipartUserData();
+    if (this.isUbuntu())
+      userData.addUserDataPart(this.cloudInitData('assets/ubuntu-cloudinit.yml'), ec2.MultipartBody.SHELL_SCRIPT, false);
+    else
+      userData.addUserDataPart(this.cloudInitData('assets/al2023-cloudinit.yml'), ec2.MultipartBody.SHELL_SCRIPT, false);
+
+    userData.addUserDataPart(this.cloudInitDynamicData(props), ec2.MultipartBody.SHELL_SCRIPT, false);
+    userData.addUserDataPart(this.cloudShellData(props), ec2.MultipartBody.SHELL_SCRIPT, true);
     return userData;
   }
 
-  private machineImageFromProps(props: OmzBastionStackProps): ec2.IMachineImage | undefined {
+  private cloudShellData(props: OmzBastionStackProps): UserData {
+
+    var cloudShellData = UserData.forLinux({ shebang: '#!/usr/bin/bash' });
+    return cloudShellData;
+  }
+
+
+  private cloudInitData(filename: string): UserData {
+
+    // read a file from lib/ubuntu-cloudinit.yml into a string
+    // and use it as the cloud-init user-data
+    const yamlString = readFileSync(filename, 'utf8');
+    const cloudInitData = UserData.custom(yamlString);
+    return cloudInitData;
+  }
+
+  private cloudInitDynamicData(props: OmzBastionStackProps) {
+
+    // Construct a cloud-init userData
+    const cloudInitDynamicData = UserData.forLinux({ shebang: '#cloud-config' });
+
+    cloudInitDynamicData.addCommands(
+      'write_files:',
+      '    - path: /bin/growfs.sh',
+      "      permissions: '0755'",
+      '      owner: root',
+      '      encoding: b64',
+      '      content: ' + readFileSync('assets/growfs.sh', 'base64'),
+      '', 
+    );
+    cloudInitDynamicData.addCommands(
+      'runcmd:',);
+
+    if (this.isUbuntu()) {
+      cloudInitDynamicData.addCommands(
+        `    - [ curl, "https://awscli.amazonaws.com/awscli-exe-linux-${this.getCpuTypeAwscli()}.zip", -o, "/run/awscliv2.zip" ]`,
+        '    - [ unzip, -qo, /run/awscliv2.zip, -d, /run/awscli ]',
+        '    - /run/awscli/aws/install -u 1>/var/log/awscli-install.log 2>&1',
+        '    - [ rm, /run/awscliv2.zip ]',
+        '    - [ rm, -rf, /run/awscli ]',
+      );
+    }
+
+    // must be after awscli is installed
+    cloudInitDynamicData.addCommands(
+      '    - /bin/growfs.sh',
+    );
+
+    cloudInitDynamicData.addCommands(
+      '    - stdbuf -oL nohup bash -c \\\\"GLOBAL=1 $(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\\\"',
+      '    - stdbuf -oL nohup sudo -u ssm-user -Hin bash -c \\\\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\\\"',
+      '',);
+  
+      
+    cloudInitDynamicData.addCommands(
+      'ssh_authorized_keys:',
+      `    - ${readFileSync(`${process.env.HOME}/.ssh/${props.ec2KeyName}.pub`)}`,
+      '',
+    );
+
+    cloudInitDynamicData.addCommands(
+      'users:',
+      '    - name: ssm-user',
+      '      groups: root, adm, dip, lxd, sudo, docker, users',
+      '      sudo: ALL=(ALL) NOPASSWD:ALL',
+      '      shell: /usr/bin/zsh',
+      '      ssh_authorized_keys:',
+      `        - ${readFileSync(`${process.env.HOME}/.ssh/${props.ec2KeyName}.pub`)}`
+    );
+
+    if (this.isAL2023())
+    {
+      cloudInitDynamicData.addCommands('packages:',);
+      cloudInitDynamicData.addCommands(... this.initPackages('assets/dnfrequirements.txt', '- '));
+    }
+    else if (this.isUbuntu())
+    {
+      cloudInitDynamicData.addCommands('packages:',);
+      cloudInitDynamicData.addCommands(... this.initPackages('assets/aptrequirements.txt', '- '));
+    }
+    return cloudInitDynamicData;
+  }
+
+
+  private machineImageFromProps(props: OmzBastionStackProps): ec2.IMachineImage {
 
     // If linuxDistribution is 'UBUNTU', then lookup the latest Ubuntu image
     // for the cpuType props.cpuType
-    if (props.linuxDistribution == 'UBUNTU') {
+    if (this.isUbuntu()) {
       var distroRelease = 'jammy';
       const ubuntuImage = ec2.MachineImage.fromSsmParameter(
-        `/aws/service/canonical/ubuntu/server/${distroRelease}/stable/current/${ubuntuCpuType(props)}/hvm/ebs-gp2/ami-id`,
+        `/aws/service/canonical/ubuntu/server/${ distroRelease }/stable/current/${ this.getCpuTypeDpkg() }/hvm/ebs-gp2/ami-id`,
         {
-          userData: this.userDataUbuntu()
+          userData: this.createUserData(props)
         });
       return ubuntuImage;
     }
 
-    //if (props.linuxDistribution == 'AMAZON_LINUX2023') 
-    return ec2.MachineImage.latestAmazonLinux2023({ cpuType: props.cpuType });
+    //if (isAL2023()) 
+    return ec2.MachineImage.latestAmazonLinux2023({ cpuType: props.cpuType, userData: this.createUserData(props) });
   }
 
-  initPackagesYum(): ec2.InitElement[] {
+  initPackages(filename: string, prefix: string): string[] {
     // Generate an array of InitPackage with yum entries for each line in the file dnfrequirements.txt
-    const dnfRequirements = require('fs').readFileSync('dnfrequirements.txt', 'utf8').
+    const dnfRequirements = require('fs').readFileSync(filename, 'utf8').
       split('\n').map((line: string) => line.trim()).flatMap((line: string) => {
         if (line.length == 0) return [];
         if (line.startsWith('#')) return [];
         return [line];
       });
 
-    return dnfRequirements.map((packageName: string) => ec2.InitPackage.yum(packageName));
+    return dnfRequirements.map((packageName: string) => prefix + packageName);
   }
-}
-
-function ubuntuCpuType(props: OmzBastionStackProps) {
-  return props.cpuType == AmazonLinuxCpuType.X86_64 ? "amd64" : "arm64";
 }

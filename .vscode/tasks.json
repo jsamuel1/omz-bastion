@@ -16,16 +16,43 @@
 		{
 			"label": "cdk: deploy",
 			"type": "shell",
-//			"command": "npx aws-cdk deploy --require-approval=never ${input:stacks}",
-			"command": "npx aws-cdk deploy --require-approval=never --all",
+			"command": "npx aws-cdk deploy --require-approval=never --concurrency=4 --all",
 			"group": "build",
 			"presentation": {
 				"reveal": "always",
 				"panel": "shared",
 				"clear": true,
 				"focus": true
-			}
+			},
+			"problemMatcher": []
 		},
+		{
+			"label": "cdk: list",
+			"type": "shell",
+			"command": "npx aws-cdk list",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared",
+				"clear": true,
+				"focus": true
+			},
+			"problemMatcher": []
+		},
+		{
+			// task to deploy a single stack, seleting from cdk list
+			"label": "cdk: deploy stack",
+			"type": "shell",
+			"command": "npx aws-cdk deploy --require-approval=never --concurrency=4 ${input:stacks}",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared",
+				"clear": true,
+				"focus": true
+			},
+			"problemMatcher": []
+		}
 		{
 			"type": "npm",
 			"script": "build",
@@ -45,18 +72,24 @@
 				"clear": true,
 				"focus": true
 			}
-		},
+		}
 	],
 	"inputs": [
 		{
 			"id": "stacks",
-			"description": "CDK stacks to use",
-			"default": "--all",
-			"type": "pickString",
-			"options": [
-				"--all",
-				"OmzSsmLambdaStack",
-			]
+			"type": "command",
+			"command": "shellCommand.execute",
+			"args": {
+				"command": "cdk list",
+				"cwd": "${workspaceFolder}",
+				//  taskId - randomly generated
+				"taskId": "6B421C9A-51EE-43DE-904D-5ED3E78D80E7",
+				"rememberPrevious": true,
+				"description": "Select a CDK stack",
+				"defaultOptions": [
+					"--all"
+				],
+			},
 		}
 	]
 }

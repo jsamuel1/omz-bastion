@@ -1,16 +1,10 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import { OmzBastionStack, OmzBastionStackProps } from '../lib/omz-bastion-stack';
-import { OmzSsmLambdaStack } from '../lib/omz-ssm-lambda-stack';
 import { ContextProps } from '../lib/context';
 import { App } from 'aws-cdk-lib';
 
 const app = new App();
-var lambda = new OmzSsmLambdaStack(app, 'SsmInitiationLambda', {
-  env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION
-  },
-});
 
 const environment: string = app.node.tryGetContext('environment');
 if (!environment) {
@@ -40,7 +34,6 @@ context.instances.forEach(instance => {
     linuxDistribution: instance.linuxDistribution ?? 'AMAZON_LINUX2023',
     ec2KeyName: instance.keyName ?? "id_25519",
     cpuType: instance.cpuType,
-    postBootLambdaArn: lambda.arn
   };
   new OmzBastionStack(app, props.instanceName, props);
 }

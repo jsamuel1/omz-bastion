@@ -1,0 +1,75 @@
+#cloud-config
+repo_update: true
+repo_upgrade: all
+package_upgrade: true
+
+bootcmd:
+    - ln -sf bash /bin/sh
+    - [cloud-init-per, once, systemctl, stop, unattended-upgrades]
+    - [cloud-init-per, once, systemctl, disable, unattended-upgrades]
+
+device_aliases: { "nvme1n1": "/dev/nvme1n1" }
+
+disk_setup:
+    nvme1n1:
+        table_type: gpt
+        layout: true
+        overwrite: false
+
+fs_setup:
+    - label: ebshome
+      filesystem: xfs
+      device: nvme1n1
+      partition: auto
+
+mounts:
+    - [tmpfs, "/tmp", "tmpfs", "rw,nosuid,nodev,relatime", "0", "2"]
+    - [/dev/nvme1n1, /home, "xfs", "defaults,nofail", "0", "2"]
+
+system_info:
+    apt_get_command:
+        [
+            "apt-get",
+            "--option=Dpkg::Options::=--force-confold",
+            "--option=Dpkg::options::=--force-unsafe-io",
+            "--option=DPkg::Lock::Timeout=60",
+            "--option=Dpkg::Use-Pty=0",
+            "--assume-yes",
+            "--quiet",
+        ]
+
+packages:
+    - unzip
+    - git
+    - vim
+    - tmux
+    - curl
+    - wget
+    - zsh
+    - python3-pip
+    - apt-transport-https
+    - software-properties-common
+    - gpg
+    - mpack
+
+sources:
+    rtx-archive:
+        source: deb [signed-by=$KEY_FILE arch=amd64,arm64]  https://rtx.jdx.dev/deb stable main
+        keyid: 29DDE9E0
+    githubcli-archive:
+        source: deb [signed-by=$KEY_FILE arch=amd64,arm64]  https://cli.github.com/packages stable main
+        keyid: 23F3D4EA75716059
+    vscode:
+        source: deb [signed-by=$KEY_FILE arch=amd64,arm64,armhf] https://packages.microsoft.com/repos/code stable main
+        keyid: EB3E94ADBE1229CF
+
+runcmd:
+    - [mkdir, -p, /opt/aws/bin]
+    - [
+          pip3,
+          install,
+          "https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz",
+      ]
+    - [ln, -sf, /usr/local/init/ubuntu/cfn-hup, /etc/init.d/cfn-hup]
+    - [ln, -sf, /usr/local/bin/cfn-init, /opt/aws/bin/]
+    - [ln, -sf, /usr/local/bin/cfn-signal, /opt/aws/bin/]
