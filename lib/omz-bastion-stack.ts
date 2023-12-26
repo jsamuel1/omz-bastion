@@ -174,7 +174,7 @@ runcmd:
 
     cloudInitDynamicData.addCommands(
       '- stdbuf -oL nohup bash -c \\\\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\\\" || echo "failed"',
-      '- stdbuf -oL nohup sudo -u ssm-user -Hin bash -c \\\\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\\\" || echo "failed"',
+      '- stdbuf -oL nohup sudo -u ssm-user -Hin bash -c \'bash -c "$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)" || echo "failed"\'',
       '',);
 
     cloudInitDynamicData.addCommands(
