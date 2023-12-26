@@ -5,8 +5,8 @@ package_upgrade: true
 
 bootcmd:
     - ln -sf bash /bin/sh
-    - [cloud-init-per, once, systemctl, stop, unattended-upgrades]
-    - [cloud-init-per, once, systemctl, disable, unattended-upgrades]
+    - [cloud-init-per, once, unattended-stop, systemctl, stop, unattended-upgrades]
+    - [cloud-init-per, once, unattended-disable, systemctl, disable, unattended-upgrades]
 
 device_aliases: { "nvme1n1": "/dev/nvme1n1" }
 
@@ -35,41 +35,27 @@ system_info:
             "--option=DPkg::Lock::Timeout=60",
             "--option=Dpkg::Use-Pty=0",
             "--assume-yes",
-            "--quiet",
+            "--quiet=2",
         ]
 
-packages:
-    - unzip
-    - git
-    - vim
-    - tmux
-    - curl
-    - wget
-    - zsh
-    - python3-pip
-    - apt-transport-https
-    - software-properties-common
-    - gpg
-    - mpack
+apt:
+  conf: | # APT config
+    APT {
+      Get {
+        Assume-Yes "true";
+        Fix-Broken "true";
+        Fix-Missing "true";
+        Quiet "true";
+      };
+    };
 
-sources:
-    rtx-archive:
+  sources:
+    rtx:
         source: deb [signed-by=$KEY_FILE arch=amd64,arm64]  https://rtx.jdx.dev/deb stable main
         keyid: 29DDE9E0
-    githubcli-archive:
+    github-cli:
         source: deb [signed-by=$KEY_FILE arch=amd64,arm64]  https://cli.github.com/packages stable main
         keyid: 23F3D4EA75716059
     vscode:
         source: deb [signed-by=$KEY_FILE arch=amd64,arm64,armhf] https://packages.microsoft.com/repos/code stable main
         keyid: EB3E94ADBE1229CF
-
-runcmd:
-    - [mkdir, -p, /opt/aws/bin]
-    - [
-          pip3,
-          install,
-          "https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz",
-      ]
-    - [ln, -sf, /usr/local/init/ubuntu/cfn-hup, /etc/init.d/cfn-hup]
-    - [ln, -sf, /usr/local/bin/cfn-init, /opt/aws/bin/]
-    - [ln, -sf, /usr/local/bin/cfn-signal, /opt/aws/bin/]

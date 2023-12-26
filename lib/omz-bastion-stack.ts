@@ -46,7 +46,6 @@ export class OmzBastionStack extends Stack {
       case AmazonLinuxCpuType.X86_64:
         return "x86_64";
     }
-
   }
 
   isUbuntu(): boolean {
@@ -99,15 +98,6 @@ export class OmzBastionStack extends Stack {
     const cfnInstance = host.node.defaultChild as ec2.CfnInstance;
     cfnInstance.keyName = props.ec2KeyName;
 
-    // wait for cnfInstance to call cfn-signal to signify creation complete
-    cfnInstance.cfnOptions.creationPolicy = {
-      resourceSignal: {
-        count: 1,
-        timeout: 'PT45M'
-      }
-    }
-    host.userData.addSignalOnExitCommand(host); // this must be after Instance is instantiated.
-
     new CfnOutput(this, 'BastionInstanceId', { value: instanceId });
     new CfnOutput(this, 'BastionName', { value: props.instanceName })
   };
@@ -147,66 +137,72 @@ export class OmzBastionStack extends Stack {
 
     cloudInitDynamicData.addCommands(
       'write_files:',
-      '    - path: /bin/growfs.sh',
-      "      permissions: '0755'",
-      '      owner: root',
-      '      encoding: b64',
-      '      content: ' + readFileSync('assets/growfs.sh', 'base64'),
-      '', 
+      '- path: /bin/growfs.sh',
+      "  permissions: '0755'",
+      '  owner: root',
+      '  encoding: b64',
+      '  content: ' + readFileSync('assets/growfs.sh', 'base64'),
+      '',
     );
-    cloudInitDynamicData.addCommands(
-      'runcmd:',);
 
     if (this.isUbuntu()) {
-      cloudInitDynamicData.addCommands(
-        `    - [ curl, "https://awscli.amazonaws.com/awscli-exe-linux-${this.getCpuTypeAwscli()}.zip", -o, "/run/awscliv2.zip" ]`,
-        '    - [ unzip, -qo, /run/awscliv2.zip, -d, /run/awscli ]',
-        '    - /run/awscli/aws/install -u 1>/var/log/awscli-install.log 2>&1',
-        '    - [ rm, /run/awscliv2.zip ]',
-        '    - [ rm, -rf, /run/awscli ]',
+      cloudInitDynamicData.addCommands(`
+runcmd:
+- [ curl, "https://awscli.amazonaws.com/awscli-exe-linux-${this.getCpuTypeAwscli()}.zip", -o, "/run/awscliv2.zip" ]
+- [ unzip, -qo, /run/awscliv2.zip, -d, /run/awscli ]
+- /run/awscli/aws/install -u 1>/var/log/awscli-install.log 2>&1
+- [ rm, /run/awscliv2.zip ]
+- [ rm, -rf, /run/awscli ]
+- [ mkdir, -p, /opt/aws/bin ]
+- [  
+  pip3,
+  install, 
+  "https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-py3-latest.tar.gz"
+]
+- [ ln, -sf, /usr/local/init/ubuntu/cfn-hup, /etc/init.d/cfn-hup ]
+- [ ln, -sf, '/usr/local/bin/cfn-*', /opt/aws/bin/ ]
+- /bin/growfs.sh 
+`      );
+    }
+    else if (this.isAL2023()) {
+      cloudInitDynamicData.addCommands(`
+runcmd:
+- /bin/growfs.sh
+`,
       );
     }
 
-    // must be after awscli is installed
     cloudInitDynamicData.addCommands(
-      '    - /bin/growfs.sh',
-    );
+      '- stdbuf -oL nohup bash -c \\\\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\\\" || echo "failed"',
+      '- stdbuf -oL nohup sudo -u ssm-user -Hin bash -c \\\\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\\\" || echo "failed"',
+      '',);
 
     cloudInitDynamicData.addCommands(
-      '    - stdbuf -oL nohup bash -c \\\\"GLOBAL=1 $(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\\\"',
-      '    - stdbuf -oL nohup sudo -u ssm-user -Hin bash -c \\\\"$(curl -fsSL https://raw.githubusercontent.com/jsamuel1/dot-files/master/bootstrap.sh)\\\\"',
-      '',);
-  
-      
-    cloudInitDynamicData.addCommands(
       'ssh_authorized_keys:',
-      `    - ${readFileSync(`${process.env.HOME}/.ssh/${props.ec2KeyName}.pub`)}`,
+      `- ${readFileSync(`${process.env.HOME}/.ssh/${props.ec2KeyName}.pub`)}`,
       '',
     );
 
     cloudInitDynamicData.addCommands(
       'users:',
-      '    - name: ssm-user',
-      '      groups: root, adm, dip, lxd, sudo, docker, users',
-      '      sudo: ALL=(ALL) NOPASSWD:ALL',
-      '      shell: /usr/bin/zsh',
-      '      ssh_authorized_keys:',
-      `        - ${readFileSync(`${process.env.HOME}/.ssh/${props.ec2KeyName}.pub`)}`
+      '- name: ssm-user',
+      '  groups: root, adm, dip, lxd, sudo, docker, users',
+      '  sudo: ALL=(ALL) NOPASSWD:ALL',
+      '  shell: /usr/bin/zsh',
+      '  ssh_authorized_keys:',
+      `  - ${readFileSync(`${process.env.HOME}/.ssh/${props.ec2KeyName}.pub`)}`
     );
 
-    if (this.isAL2023())
-    {
+    if (this.isAL2023()) {
       cloudInitDynamicData.addCommands('packages:',);
       cloudInitDynamicData.addCommands(... this.initPackages('assets/dnfrequirements.txt', '- '));
     }
-    else if (this.isUbuntu())
-    {
+    else if (this.isUbuntu()) {
       cloudInitDynamicData.addCommands('packages:',);
       cloudInitDynamicData.addCommands(... this.initPackages('assets/aptrequirements.txt', '- '));
     }
     return cloudInitDynamicData;
   }
-
 
   private machineImageFromProps(props: OmzBastionStackProps): ec2.IMachineImage {
 
@@ -215,7 +211,7 @@ export class OmzBastionStack extends Stack {
     if (this.isUbuntu()) {
       var distroRelease = 'jammy';
       const ubuntuImage = ec2.MachineImage.fromSsmParameter(
-        `/aws/service/canonical/ubuntu/server/${ distroRelease }/stable/current/${ this.getCpuTypeDpkg() }/hvm/ebs-gp2/ami-id`,
+        `/aws/service/canonical/ubuntu/server/${distroRelease}/stable/current/${this.getCpuTypeDpkg()}/hvm/ebs-gp2/ami-id`,
         {
           userData: this.createUserData(props)
         });

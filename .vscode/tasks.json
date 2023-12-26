@@ -64,7 +64,7 @@
 		{
 			"label": "cdk: destroy",
 			"type": "shell",
-			"command": "npx aws-cdk destroy --all",
+			"command": "npx aws-cdk destroy --all --concurrency=4",
 			"group": "build",
 			"presentation": {
 				"reveal": "always",
