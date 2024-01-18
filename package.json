@@ -23,7 +23,7 @@
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.476.0",
     "@aws-sdk/client-eventbridge": "^3.476.0",
-    "@aws-sdk/client-lambda": "^3.476.0",
+    "@aws-sdk/client-lambda": "^3.481.0",
     "@aws-sdk/client-ssm": "^3.476.0",
     "aws-cdk-lib": "^2.115.0",
     "constructs": "^10.0.0",
