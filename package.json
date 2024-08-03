@@ -21,10 +21,10 @@
     "typescript": "~5.3.3"
   },
   "dependencies": {
-    "@aws-sdk/client-ec2": "^3.476.0",
+    "@aws-sdk/client-ec2": "^3.529.0",
     "@aws-sdk/client-eventbridge": "^3.476.0",
     "@aws-sdk/client-lambda": "^3.476.0",
-    "@aws-sdk/client-ssm": "^3.476.0",
+    "@aws-sdk/client-ssm": "^3.529.0",
     "aws-cdk-lib": "^2.115.0",
     "constructs": "^10.0.0",
     "source-map-support": "^0.5.21"
